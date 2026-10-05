@@ -1,8 +1,10 @@
 require("dotenv").config();
-
+process.env.TZ = "America/Mexico_City";
 const express = require("express");
 const http = require("http");
-const sequelize = require("./config/db");
+
+// 1. Importamos sequelize y la carga de todos los modelos desde src/models/index.js
+const { sequelize } = require("./models");
 const routes = require("./routes");
 const cors = require("cors");
 
@@ -20,31 +22,21 @@ app.get("/health", (req, res) => {
 });
 
 app.use(cors(corsOptions));
-
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-const httpServer = http.createServer(app);
-
 app.use("/api", routes);
 
+const httpServer = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
-async function startServer() {
-  try {
-    await sequelize.authenticate();
-    console.log("✅ Base de datos conectada.");
-
-    // Sincronizar tablas (alter: true actualiza campos sin borrar datos)
-    await sequelize.sync({ alter: true });
-    console.log("✅ Tablas sincronizadas.");
-
-    app.listen(PORT, () => {
-      console.log(`🚀 Servidor listo en http://localhost:${PORT}`);
+// 2. Usamos alter: true o force: true temporalmente para sincronizar en desarrollo
+sequelize
+  .sync({ alter: true })
+  .then(async () => {
+    console.log("✅ Base de datos y tablas sincronizadas correctamente");
+    httpServer.listen(PORT, "0.0.0.0", () => {
+      console.log(`🌐 Servidor corriendo en puerto ${PORT}`);
     });
-  } catch (error) {
-    console.error("❌ Error al iniciar servidor:", error.message);
-  }
-}
-
-startServer();
+  })
+  .catch((err) => console.error("❌ Error DB:", err));
