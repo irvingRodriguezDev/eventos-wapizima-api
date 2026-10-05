@@ -22,6 +22,9 @@ app.get("/health", (req, res) => {
 });
 
 app.use(cors(corsOptions));
+
+app.use("/api/webhooks", require("./routes/webhookRoutes"));
+
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true }));
 
