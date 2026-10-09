@@ -19,6 +19,7 @@
     "multer": "^2.4.0",
     "mysql2": "^3.24.5",
     "sequelize": "^6.37.8",
+    "slugify": "^1.6.9",
     "stripe": "^23.0.0"
   },
   "devDependencies": {

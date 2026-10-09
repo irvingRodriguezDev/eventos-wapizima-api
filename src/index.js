@@ -1,5 +1,5 @@
 require("dotenv").config();
-process.env.TZ = "America/Mexico_City";
+// process.env.TZ = "America/Mexico_City";
 const express = require("express");
 const http = require("http");
 
@@ -35,7 +35,7 @@ const PORT = process.env.PORT || 3000;
 
 // 2. Usamos alter: true o force: true temporalmente para sincronizar en desarrollo
 sequelize
-  .sync({ alter: true })
+  .sync({ alter: false })
   .then(async () => {
     console.log("✅ Base de datos y tablas sincronizadas correctamente");
     httpServer.listen(PORT, "0.0.0.0", () => {

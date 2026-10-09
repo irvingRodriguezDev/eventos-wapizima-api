@@ -1,16 +1,17 @@
 const express = require("express");
+const { handleUpload, upload } = require("../middlewares/uploadImage");
 const {
   getAllEvents,
-  getEventById,
+  getEventBySlug,
   createEvent,
 } = require("../controllers/EventController");
 const router = express.Router();
 
 // Lectura pública de eventos
 router.get("/", getAllEvents);
-router.get("/:id", getEventById);
+router.get("/:slug", getEventBySlug);
 
 // Creación de evento (puedes agregar middleware de auth/admin si lo requiere)
-router.post("/", createEvent);
+router.post("/", handleUpload(upload.single("image")), createEvent);
 
 module.exports = router;
