@@ -1,21 +1,62 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../config/db");
 
-const Event = sequelize.define("Event", {
-  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-  title: { type: DataTypes.STRING, allowNull: false },
-  slug: { type: DataTypes.STRING, allowNull: false, unique: true },
-  description: { type: DataTypes.TEXT, allowNull: false },
-  mapa: { type: DataTypes.TEXT },
-  location: { type: DataTypes.STRING, allowNull: false },
-  startDate: { type: DataTypes.DATE, allowNull: false },
-  endDate: { type: DataTypes.DATE, allowNull: true },
-  status: {
-    type: DataTypes.ENUM("draft", "published", "completed", "cancelled"),
-    defaultValue: "draft",
+const Event = sequelize.define(
+  "Event",
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    title: {
+      type: DataTypes.STRING(255),
+      allowNull: false,
+    },
+    slug: {
+      type: DataTypes.STRING(255),
+      allowNull: false,
+      unique: true,
+    },
+    description: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+    },
+    location: {
+      type: DataTypes.STRING(255),
+      allowNull: false,
+    },
+    startDate: {
+      type: DataTypes.DATE,
+      allowNull: false,
+    },
+    mapa: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+    },
+    endDate: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    // Bandera rápida para saber si activa el módulo de parcialidades
+    allowsPaymentPlan: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
+    status: {
+      type: DataTypes.ENUM("draft", "published", "completed", "cancelled"),
+      defaultValue: "draft",
+    },
+    seatingMapConfig: {
+      type: DataTypes.TEXT, // Reservado para Konva
+      allowNull: true,
+    },
   },
-  // Si deseas guardar la distribución del mapa de Konva
-  seatingMapConfig: { type: DataTypes.TEXT, allowNull: true },
-});
+  {
+    tableName: "events",
+    timestamps: true,
+    paranoid: true,
+  },
+);
 
 module.exports = Event;

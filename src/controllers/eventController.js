@@ -10,96 +10,13 @@ const {
 const slugify = require("slugify");
 const getS3Url = require("../helpers/getS3Url");
 /**
- * Obtener lista de eventos activos
- */
-const getAllEvents = async (req, res) => {
-  try {
-    const events = await Event.findAll({
-      where: { deletedAt: null },
-      include: [
-        {
-          model: EventImage,
-          as: "image",
-          attributes: ["id", "s3Key"],
-        },
-        { model: TicketType, as: "ticketTypes" },
-        {
-          model: EventPaymentPlan,
-          as: "paymentPlan",
-          include: [{ model: EventInstallmentRule, as: "installmentRules" }],
-        },
-      ],
-      order: [["startDate", "ASC"]],
-    });
-    const formattedEvents = events.map((event) => {
-      const eventData = event.toJSON();
-      return {
-        ...eventData,
-        image: eventData.image ? getS3Url(eventData.image.s3Key) : null,
-      };
-    });
-
-    return res.status(200).json(formattedEvents);
-  } catch (error) {
-    console.error("Error al obtener eventos:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Error interno del servidor" });
-  }
-};
-/**
- * Obtener detalle de un evento por ID o Slug
- */
-const getEventBySlug = async (req, res) => {
-  try {
-    const { slug } = req.params;
-
-    const event = await Event.findOne({
-      where: { slug, deletedAt: null },
-      include: [
-        { model: EventImage, as: "image" },
-        { model: TicketType, as: "ticketTypes" },
-        {
-          model: EventPaymentPlan,
-          as: "paymentPlan",
-          include: [{ model: EventInstallmentRule, as: "installmentRules" }],
-        },
-      ],
-    });
-
-    if (!event) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Evento no encontrado" });
-    }
-
-    return res.status(200).json(event);
-  } catch (error) {
-    console.error("Error al obtener detalle del evento:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Error interno del servidor" });
-  }
-};
-/**
  * Crear Evento completo con Portada, Tipos de Boletos y Plan de Pagos
  */
 const createEvent = async (req, res) => {
   const transaction = await sequelize.transaction();
   try {
-    const {
-      title,
-      description,
-      location,
-      mapa,
-      startDate,
-      endDate,
-      totalTickets,
-      price,
-      allowsPaymentPlan,
-      minDepositAmount,
-      status,
-    } = req.body;
+    const { title, description, location, mapa, startDate, endDate, status } =
+      req.body;
     // 1. Crear Evento
     const slug = slugify(title, { lower: true, strict: true });
     const newEvent = await Event.create(
@@ -111,10 +28,7 @@ const createEvent = async (req, res) => {
         mapa,
         startDate,
         endDate,
-        totalTickets,
-        price,
-        allowsPaymentPlan,
-        minDepositAmount,
+        allowsPaymentPlan: true,
         status,
       },
       { transaction },
@@ -178,6 +92,7 @@ const createEvent = async (req, res) => {
       success: true,
       message: "Evento creado exitosamente",
       eventId: newEvent.id,
+      slugEvent: newEvent.slug,
     });
   } catch (error) {
     await transaction.rollback();
@@ -187,16 +102,108 @@ const createEvent = async (req, res) => {
       .json({ success: false, message: "Error al registrar el evento" });
   }
 };
+//funcion que nos permite obtener todos los eventos que se encuentran como borrador
+const getAllEventsDrafted = async (req, res) => {
+  try {
+    const eventsdraft = await Event.findAll({
+      where: { status: "draft", deletedAt: null },
+      include: [
+        {
+          model: EventImage,
+          as: "image",
+          attributes: ["s3key"],
+        },
+      ],
+      order: [["startDate", "ASC"]],
+    });
+    const formattedEventsDraft = eventsdraft.map((event) => {
+      const eventData = event.toJSON();
+      return {
+        ...eventData,
+        image: eventData.image ? getS3Url(eventData.image.s3key) : null,
+      };
+    });
+    return res.status(200).json(formattedEventsDraft);
+  } catch (error) {
+    console.log(
+      error,
+      "Hubo un error al obtener la lista de los eventos en borrador",
+    );
+    return res
+      .status(500)
+      .json({ message: "Hubo un error al listar los eventos" });
+  }
+};
+//funcion que nos permite listar los eventos publicos
+const getAllEventsPublished = async (req, res) => {
+  try {
+    const events = await Event.findAll({
+      where: { status: "published", deletedAt: null },
+      include: [
+        {
+          model: EventImage,
+          as: "image",
+          attributes: ["id", "s3key"],
+        },
+      ],
+      order: [["startDate", "ASC"]],
+    });
+    const formatedEvents = events.map((event) => {
+      const eventData = event.toJSON();
+      return {
+        ...eventData,
+        image: eventData.image ? getS3Url(eventData.image.s3key) : null,
+      };
+    });
+    return res.status(200).json(formatedEvents);
+  } catch (error) {
+    console.log(
+      error,
+      "Hubo un error al obtener la lista de los eventos en borrador",
+    );
+    return res
+      .status(500)
+      .json({ message: "Hubo un error al listar los eventos" });
+  }
+};
+
+/**
+ * Obtener detalle de un evento por ID o Slug
+ */
+const getEventBySlug = async (req, res) => {
+  try {
+    const { slug } = req.params;
+
+    const event = await Event.findOne({
+      where: { slug, deletedAt: null },
+      include: [{ model: EventImage, as: "image" }],
+    });
+
+    if (!event) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Evento no encontrado" });
+    }
+
+    return res.status(200).json(event);
+  } catch (error) {
+    console.error("Error al obtener detalle del evento:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Error interno del servidor" });
+  }
+};
+
 //Funcion para publicar un evento, asegurando que tenga un plan de pagos configurado antes de hacerlo disponible para la venta
 const publishEvent = async (req, res) => {
-  // Iniciamos una transacción de BD
   const t = await sequelize.transaction();
 
   try {
     const { id } = req.params;
-    const { hasPaymentPlan, paymentPlan } = req.body; // Recibimos la estructura del plan de pagos
+    const { milestones, allowsPaymentPlan = true } = req.body;
 
-    const event = await Event.findByPk(id, { transaction: t });
+    // 1. Buscar evento
+    const event = await Event.findOne({ where: { id }, transaction: t });
 
     if (!event) {
       await t.rollback();
@@ -205,61 +212,92 @@ const publishEvent = async (req, res) => {
         .json({ success: false, message: "Evento no encontrado" });
     }
 
-    // Validar que se envíen hitos si se indicó que el evento maneja plan de pagos
+    if (!milestones || milestones.length === 0) {
+      await t.rollback();
+      return res.status(400).json({
+        success: false,
+        message:
+          "Debe incluir al menos un hito en la estructura del plan de pagos",
+      });
+    }
+
+    // Opcional: Validar que la suma coincida con el precio base del evento
+    const totalPlan = milestones.reduce(
+      (sum, item) => sum + (parseFloat(item.amount) || 0),
+      0,
+    );
+
     if (
-      hasPaymentPlan &&
-      (!paymentPlan ||
-        !paymentPlan.milestones ||
-        paymentPlan.milestones.length === 0)
+      Number(event.price) > 0 &&
+      Math.abs(totalPlan - Number(event.price)) > 0.01
     ) {
       await t.rollback();
       return res.status(400).json({
         success: false,
-        message: "Debe incluir al menos un hito en el plan de pagos.",
+        message: `La suma del plan ($${totalPlan}) no coincide con el precio del evento ($${event.price})`,
       });
     }
 
-    // 1. Crear o actualizar el Plan de Pagos asociado al evento
-    if (hasPaymentPlan) {
-      // Eliminar plan anterior si se está reconfigurando
-      await EventPaymentPlan.destroy({
-        where: { eventId: id },
-        transaction: t,
-      });
+    // 2. Reemplazar registros en EventPaymentPlan (Tabla de Hitos)
+    await EventPaymentPlan.destroy({
+      where: { eventId: event.id },
+      transaction: t,
+    });
 
-      // Insertar los hitos/milestones del plan de pagos
-      const planRecords = paymentPlan.milestones.map((item, index) => ({
-        eventId: id,
-        step: index + 1,
-        concept: item.concept,
-        amount: parseFloat(item.amount) || 0,
-        note: item.note || "",
-      }));
+    const planRecords = milestones.map((item, index) => ({
+      eventId: event.id,
+      step: index + 1,
+      concept: item.concept,
+      amount: parseFloat(item.amount) || 0,
+      note: item.note || null,
+    }));
 
-      await EventPaymentPlan.bulkCreate(planRecords, { transaction: t });
-    }
+    await EventPaymentPlan.bulkCreate(planRecords, { transaction: t });
 
-    // 2. Cambiar el estatus del evento a publicado
+    // 3. Actualizar Evento a Publicado
+    event.allowsPaymentPlan = allowsPaymentPlan;
     event.status = "published";
     await event.save({ transaction: t });
 
-    // Confirmar cambios en la base de datos
     await t.commit();
-
-    // Consultar el evento actualizado con su plan de pagos para la respuesta
-    const updatedEvent = await Event.findByPk(id, {
-      include: [{ model: EventPaymentPlan, as: "paymentPlan" }],
-    });
 
     return res.status(200).json({
       success: true,
-      message: "Evento y plan de pagos configurados y publicados exitosamente",
-      data: updatedEvent,
+      message: "Plan de pagos configurado y evento publicado exitosamente",
+      data: event,
     });
   } catch (error) {
-    // Revertir cambios ante cualquier error de la BD
     await t.rollback();
     console.error("Error al publicar evento:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error interno del servidor al guardar la configuración",
+    });
+  }
+};
+
+const saveSeatingMap = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { seatingMapConfig } = req.body; // Llega el JSON serializado de Konva
+
+    const event = await Event.findByPk(id);
+    if (!event) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Evento no encontrado" });
+    }
+
+    event.seatingMapConfig = seatingMapConfig;
+    await event.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Mapa de asientos guardado correctamente",
+      data: event,
+    });
+  } catch (error) {
+    console.error("Error al guardar mapa de asientos:", error);
     return res
       .status(500)
       .json({ success: false, message: "Error interno del servidor" });
@@ -267,8 +305,10 @@ const publishEvent = async (req, res) => {
 };
 
 module.exports = {
-  getAllEvents,
+  getAllEventsDrafted,
+  getAllEventsPublished,
   getEventBySlug,
   createEvent,
   publishEvent,
+  saveSeatingMap,
 };
