@@ -15,8 +15,21 @@ const getS3Url = require("../helpers/getS3Url");
 const createEvent = async (req, res) => {
   const transaction = await sequelize.transaction();
   try {
-    const { title, description, location, mapa, startDate, endDate, status } =
-      req.body;
+    const {
+      title,
+      description,
+      location,
+      mapa,
+      startDate,
+      endDate,
+      status,
+      hasSeatingMap,
+    } = req.body;
+    console.log(
+      hasSeatingMap,
+      "LO QUE LLEGA EN EL REQ BODY PARA EL HAS SEATING MAP",
+    );
+
     // 1. Crear Evento
     const slug = slugify(title, { lower: true, strict: true });
     const newEvent = await Event.create(
@@ -29,6 +42,7 @@ const createEvent = async (req, res) => {
         startDate,
         endDate,
         allowsPaymentPlan: true,
+        hasSeatingMap: hasSeatingMap || false,
         status,
       },
       { transaction },
@@ -113,6 +127,17 @@ const getAllEventsDrafted = async (req, res) => {
           as: "image",
           attributes: ["s3key"],
         },
+        {
+          model: TicketType,
+          as: "ticketTypes",
+          attributes: ["id", "name", "price", "totalQuantity"],
+          order: [["price", "desc"]],
+        },
+        {
+          model: EventPaymentPlan,
+          as: "paymentPlan",
+          attributes: ["id", "step", "concept", "percentage", "dueDate"],
+        },
       ],
       order: [["startDate", "ASC"]],
     });
@@ -145,6 +170,12 @@ const getAllEventsPublished = async (req, res) => {
           as: "image",
           attributes: ["id", "s3key"],
         },
+        {
+          model: TicketType,
+          as: "ticketTypes",
+          attributes: ["id", "name", "price", "totalQuantity"],
+          order: [["price", "desc"]],
+        },
       ],
       order: [["startDate", "ASC"]],
     });
@@ -176,7 +207,15 @@ const getEventBySlug = async (req, res) => {
 
     const event = await Event.findOne({
       where: { slug, deletedAt: null },
-      include: [{ model: EventImage, as: "image" }],
+      include: [
+        { model: EventImage, as: "image", attributes: ["s3key"] },
+        {
+          model: TicketType,
+          as: "ticketTypes",
+          attributes: ["id", "name", "price", "totalQuantity", "color"],
+          order: [["price", "desc"]],
+        },
+      ],
     });
 
     if (!event) {
@@ -195,112 +234,101 @@ const getEventBySlug = async (req, res) => {
 };
 
 //Funcion para publicar un evento, asegurando que tenga un plan de pagos configurado antes de hacerlo disponible para la venta
-const publishEvent = async (req, res) => {
-  const t = await sequelize.transaction();
+const updateEventSettings = async (req, res) => {
+  const transaction = await sequelize.transaction();
 
   try {
     const { id } = req.params;
-    const { milestones, allowsPaymentPlan = true } = req.body;
+    const { hasSeatingMap, seatingMapConfig, paymentPlanMilestones } = req.body;
 
-    // 1. Buscar evento
-    const event = await Event.findOne({ where: { id }, transaction: t });
-
+    // 1. Buscar el evento existente
+    const event = await Event.findByPk(id, { transaction });
     if (!event) {
-      await t.rollback();
-      return res
-        .status(404)
-        .json({ success: false, message: "Evento no encontrado" });
-    }
-
-    if (!milestones || milestones.length === 0) {
-      await t.rollback();
-      return res.status(400).json({
+      await transaction.rollback();
+      return res.status(404).json({
         success: false,
-        message:
-          "Debe incluir al menos un hito en la estructura del plan de pagos",
+        message: "El evento especificado no existe.",
       });
     }
 
-    // Opcional: Validar que la suma coincida con el precio base del evento
-    const totalPlan = milestones.reduce(
-      (sum, item) => sum + (parseFloat(item.amount) || 0),
-      0,
-    );
+    // Objeto de campos a actualizar en la tabla Events
+    const fieldsToUpdate = {};
 
-    if (
-      Number(event.price) > 0 &&
-      Math.abs(totalPlan - Number(event.price)) > 0.01
-    ) {
-      await t.rollback();
-      return res.status(400).json({
-        success: false,
-        message: `La suma del plan ($${totalPlan}) no coincide con el precio del evento ($${event.price})`,
-      });
+    if (hasSeatingMap !== undefined) {
+      fieldsToUpdate.hasSeatingMap = Boolean(hasSeatingMap);
     }
 
-    // 2. Reemplazar registros en EventPaymentPlan (Tabla de Hitos)
-    await EventPaymentPlan.destroy({
-      where: { eventId: event.id },
-      transaction: t,
+    // 2. Procesar y actualizar el mapa si se envía en el body
+    if (seatingMapConfig !== undefined) {
+      fieldsToUpdate.seatingMapConfig = seatingMapConfig;
+
+      // Opcional: Calcular la capacidad total sumando las filas del mapa
+      if (seatingMapConfig && Array.isArray(seatingMapConfig.elements)) {
+        const calculatedCapacity = seatingMapConfig.elements
+          .filter((el) => el.type === "row_block")
+          .reduce((sum, el) => sum + (parseInt(el.seatCount, 10) || 0), 0);
+
+        fieldsToUpdate.totalCapacity = calculatedCapacity;
+      }
+    }
+
+    // Aplicar actualización del evento si hay campos modificados
+    if (Object.keys(fieldsToUpdate).length > 0) {
+      await event.update(fieldsToUpdate, { transaction });
+    }
+
+    // 3. Procesar y reemplazar los hitos del Plan de Pagos
+    if (paymentPlanMilestones && Array.isArray(paymentPlanMilestones)) {
+      // Limpiar los hitos previos registrados
+      await EventPaymentPlan.destroy({
+        where: { eventId: id },
+        transaction,
+      });
+
+      // Formatear los nuevos hitos
+      const formattedMilestones = paymentPlanMilestones.map((item, index) => ({
+        eventId: parseInt(id, 10),
+        step: item.step || index + 1,
+        concept: item.concept ? item.concept.trim() : `Hito ${index + 1}`,
+        percentage: parseFloat(item.percentage) || 0,
+        dueDate: item.dueDate || null,
+        note: item.note ? item.note.trim() : null,
+      }));
+
+      // Inserción masiva
+      if (formattedMilestones.length > 0) {
+        await EventPaymentPlan.bulkCreate(formattedMilestones, { transaction });
+      }
+    }
+
+    // 4. Confirmar la transacción
+    await transaction.commit();
+
+    // 5. Consultar los datos unificados para devolver al cliente
+    const updatedEvent = await Event.findByPk(id, {
+      include: [
+        { model: TicketType, as: "ticketTypes" },
+        { model: EventPaymentPlan, as: "paymentPlan" },
+      ],
     });
-
-    const planRecords = milestones.map((item, index) => ({
-      eventId: event.id,
-      step: index + 1,
-      concept: item.concept,
-      amount: parseFloat(item.amount) || 0,
-      note: item.note || null,
-    }));
-
-    await EventPaymentPlan.bulkCreate(planRecords, { transaction: t });
-
-    // 3. Actualizar Evento a Publicado
-    event.allowsPaymentPlan = allowsPaymentPlan;
-    event.status = "published";
-    await event.save({ transaction: t });
-
-    await t.commit();
 
     return res.status(200).json({
       success: true,
-      message: "Plan de pagos configurado y evento publicado exitosamente",
-      data: event,
+      message: "Configuración del evento guardada correctamente.",
+      data: updatedEvent,
     });
   } catch (error) {
-    await t.rollback();
-    console.error("Error al publicar evento:", error);
+    // Garantizar Rollback en caso de error
+    if (transaction && !transaction.finished) {
+      await transaction.rollback();
+    }
+
+    console.error("Error al actualizar la configuración del evento:", error);
     return res.status(500).json({
       success: false,
-      message: "Error interno del servidor al guardar la configuración",
+      message: "Error interno al guardar la configuración del evento.",
+      error: error.message,
     });
-  }
-};
-
-const saveSeatingMap = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { seatingMapConfig } = req.body; // Llega el JSON serializado de Konva
-
-    const event = await Event.findByPk(id);
-    if (!event) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Evento no encontrado" });
-    }
-
-    event.seatingMapConfig = seatingMapConfig;
-    await event.save();
-
-    return res.status(200).json({
-      success: true,
-      message: "Mapa de asientos guardado correctamente",
-      data: event,
-    });
-  } catch (error) {
-    console.error("Error al guardar mapa de asientos:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Error interno del servidor" });
   }
 };
 
@@ -309,6 +337,5 @@ module.exports = {
   getAllEventsPublished,
   getEventBySlug,
   createEvent,
-  publishEvent,
-  saveSeatingMap,
+  updateEventSettings,
 };

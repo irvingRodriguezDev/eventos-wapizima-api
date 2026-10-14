@@ -5,7 +5,7 @@ const {
   createEvent,
   getAllEventsDrafted,
   getAllEventsPublished,
-  publishEvent,
+  updateEventSettings,
 } = require("../controllers/EventController");
 const router = express.Router();
 
@@ -13,7 +13,7 @@ const router = express.Router();
 router.get("/draft", getAllEventsDrafted);
 router.get("/published", getAllEventsPublished);
 router.get("/:slug", getEventBySlug);
-router.put("/:id/publish", publishEvent);
+router.put("/:id/updateSettings", updateEventSettings);
 
 // Creación de evento (puedes agregar middleware de auth/admin si lo requiere)
 router.post("/", handleUpload(upload.single("image")), createEvent);

@@ -43,13 +43,18 @@ const Event = sequelize.define(
       type: DataTypes.BOOLEAN,
       defaultValue: false,
     },
+    hasSeatingMap: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
     status: {
       type: DataTypes.ENUM("draft", "published", "completed", "cancelled"),
       defaultValue: "draft",
     },
     seatingMapConfig: {
-      type: DataTypes.TEXT, // Reservado para Konva
+      type: DataTypes.JSON, // Reservado para Konva
       allowNull: true,
+      defaultValue: { elements: [] },
     },
   },
   {

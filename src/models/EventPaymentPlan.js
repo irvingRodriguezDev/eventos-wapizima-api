@@ -6,7 +6,7 @@ const EventPaymentPlan = sequelize.define("EventPaymentPlan", {
   eventId: { type: DataTypes.INTEGER, allowNull: false },
   step: { type: DataTypes.INTEGER, allowNull: false }, // 1, 2, 3...
   concept: { type: DataTypes.STRING(100), allowNull: false }, // "Inscripción", "Semana 1"
-  amount: { type: DataTypes.DECIMAL(10, 2), allowNull: false }, // 200.00, 400.00
+  percentage: { type: DataTypes.DECIMAL(10, 2), allowNull: false }, // 200.00, 400.00
   dueDate: { type: DataTypes.DATEONLY, allowNull: true }, // Opcional
   note: { type: DataTypes.STRING, allowNull: true },
 });
