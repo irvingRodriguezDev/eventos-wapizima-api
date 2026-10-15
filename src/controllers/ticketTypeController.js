@@ -75,6 +75,10 @@ const createTicketType = async (req, res) => {
     // Inserción masiva eficiente en la base de datos
     const createdTicketTypes =
       await TicketType.bulkCreate(formattedTicketTypes);
+    if (event.hasSeatingMap === false) {
+      event.status = "published";
+      await event.save();
+    }
 
     return res.status(201).json({
       success: true,

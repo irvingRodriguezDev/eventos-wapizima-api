@@ -56,6 +56,16 @@ const Event = sequelize.define(
       allowNull: true,
       defaultValue: { elements: [] },
     },
+    percentageInitialPayment: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0,
+    },
+    daysBeforePayment: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0,
+    },
   },
   {
     tableName: "events",

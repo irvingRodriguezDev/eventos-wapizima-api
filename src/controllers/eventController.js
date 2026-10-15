@@ -24,11 +24,9 @@ const createEvent = async (req, res) => {
       endDate,
       status,
       hasSeatingMap,
+      percentageInitialPayment,
+      daysBeforePayment,
     } = req.body;
-    console.log(
-      hasSeatingMap,
-      "LO QUE LLEGA EN EL REQ BODY PARA EL HAS SEATING MAP",
-    );
 
     // 1. Crear Evento
     const slug = slugify(title, { lower: true, strict: true });
@@ -44,6 +42,8 @@ const createEvent = async (req, res) => {
         allowsPaymentPlan: true,
         hasSeatingMap: hasSeatingMap || false,
         status,
+        percentageInitialPayment,
+        daysBeforePayment,
       },
       { transaction },
     );
@@ -70,36 +70,6 @@ const createEvent = async (req, res) => {
         });
       }
     }
-
-    // 3. Crear Tipos de Boletos
-    // if (ticketTypes && ticketTypes.length > 0) {
-    //   const ticketsData = ticketTypes.map((t) => ({
-    //     ...t,
-    //     eventId: newEvent.id,
-    //   }));
-    //   await TicketType.bulkCreate(ticketsData, { transaction });
-    // }
-
-    // 4. Crear Plan de Pagos y Cuotas
-    // if (paymentPlan) {
-    //   const newPlan = await EventPaymentPlan.create(
-    //     {
-    //       eventId: newEvent.id,
-    //       initialDeposit: paymentPlan.initialDeposit,
-    //       minPaymentAmount: paymentPlan.minPaymentAmount,
-    //       finalDueDate: paymentPlan.finalDueDate,
-    //     },
-    //     { transaction },
-    //   );
-
-    //   if (paymentPlan.rules && paymentPlan.rules.length > 0) {
-    //     const rulesData = paymentPlan.rules.map((r) => ({
-    //       ...r,
-    //       eventPaymentPlanId: newPlan.id,
-    //     }));
-    //     await EventInstallmentRule.bulkCreate(rulesData, { transaction });
-    //   }
-    // }
 
     await transaction.commit();
     return res.status(201).json({
