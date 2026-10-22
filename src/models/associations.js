@@ -7,6 +7,7 @@ function setupAssociations(models) {
     Ticket,
     Order,
     Payment,
+    Coupon, // 👈 1. Incluimos el modelo Coupon
   } = models;
 
   // Diagnóstico para detectar qué modelo no se importó correctamente
@@ -18,6 +19,7 @@ function setupAssociations(models) {
     Ticket,
     Order,
     Payment,
+    Coupon, // 👈 2. Lo agregamos al diagnóstico de validación
   };
   Object.entries(requiredModels).forEach(([name, model]) => {
     if (!model) {
@@ -56,6 +58,18 @@ function setupAssociations(models) {
   });
   Order.belongsTo(Event, { foreignKey: "eventId", as: "event" });
 
+  // 🎟️ NUEVO: RELACIÓN EVENTO Y CUPONES
+  // Un evento puede tener asociados múltiples cupones
+  Event.hasMany(Coupon, {
+    foreignKey: "eventId",
+    as: "coupons",
+    onDelete: "SET NULL", // Si se elimina el evento, el cupón no se borra, pasa a ser global (o NULL)
+  });
+  Coupon.belongsTo(Event, {
+    foreignKey: "eventId",
+    as: "event",
+  });
+
   // 3. TIPOS DE BOLETOS
   TicketType.hasMany(Order, {
     foreignKey: "ticketTypeId",
@@ -72,7 +86,7 @@ function setupAssociations(models) {
     as: "ticketType",
   });
 
-  // 4. ORDEN DE COMPRA (PAGOS Y TICKETS)
+  // 4. ORDEN DE COMPRA (PAGOS, TICKETS Y CUPÓN)
   Order.hasMany(Payment, {
     foreignKey: "orderId",
     as: "payments",
@@ -86,6 +100,17 @@ function setupAssociations(models) {
     onDelete: "CASCADE",
   });
   Ticket.belongsTo(Order, { foreignKey: "orderId", as: "order" });
+
+  // 🏷️ NUEVO: RELACIÓN CUPÓN Y ORDEN DE COMPRA
+  // Una orden puede haber aplicado un cupón de descuento
+  Coupon.hasMany(Order, {
+    foreignKey: "couponId",
+    as: "orders",
+  });
+  Order.belongsTo(Coupon, {
+    foreignKey: "couponId",
+    as: "coupon",
+  });
 }
 
 module.exports = setupAssociations;

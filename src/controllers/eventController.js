@@ -183,9 +183,10 @@ const getEventBySlug = async (req, res) => {
           model: TicketType,
           as: "ticketTypes",
           attributes: ["id", "name", "price", "totalQuantity", "color"],
-          order: [["price", "desc"]],
         },
       ],
+      // NOTA: El 'order' para modelos asociados debe ir a nivel raíz en Sequelize
+      order: [[{ model: TicketType, as: "ticketTypes" }, "price", "DESC"]],
     });
 
     if (!event) {
@@ -194,7 +195,16 @@ const getEventBySlug = async (req, res) => {
         .json({ success: false, message: "Evento no encontrado" });
     }
 
-    return res.status(200).json(event);
+    // Convertimos la instancia de Sequelize a objeto plano JSON
+    const eventData = event.toJSON();
+
+    // Reemplazamos/generamos el campo 'image' con la URL completa de S3
+    const formattedEvent = {
+      ...eventData,
+      image: eventData.image ? getS3Url(eventData.image.s3key) : null,
+    };
+
+    return res.status(200).json(formattedEvent);
   } catch (error) {
     console.error("Error al obtener detalle del evento:", error);
     return res

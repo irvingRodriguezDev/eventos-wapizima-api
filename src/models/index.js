@@ -7,6 +7,7 @@ const TicketType = require("./TicketType");
 const Ticket = require("./Ticket");
 const Order = require("./Order");
 const Payment = require("./Payment");
+const Coupon = require("./Coupon");
 const setupAssociations = require("./associations");
 
 const models = {
@@ -17,6 +18,7 @@ const models = {
   Ticket,
   Payment,
   Order,
+  Coupon,
 };
 
 setupAssociations(models);

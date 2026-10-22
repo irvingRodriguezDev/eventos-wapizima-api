@@ -15,6 +15,10 @@ const Order = sequelize.define("Order", {
   totalAmount: { type: DataTypes.DECIMAL(10, 2), allowNull: false }, // $1,000
   totalPaid: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0.0 }, // $200 (se actualiza con cada pago)
   balancePending: { type: DataTypes.DECIMAL(10, 2), allowNull: false }, // $800
+  couponId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
 
   status: {
     type: DataTypes.ENUM("pending_payment", "completed", "cancelled"),
