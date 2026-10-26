@@ -103,7 +103,7 @@ const handleStripeWebhook = async (req, res) => {
 
         // Activar los tickets con el primer abono (enganche cubierto)
         await Ticket.update(
-          { status: "ACTIVE" },
+          { status: "reserved" },
           { where: { orderId: order.id }, transaction },
         );
       }

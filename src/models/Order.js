@@ -54,6 +54,10 @@ const Order = sequelize.define("Order", {
     type: DataTypes.INTEGER,
     allowNull: true,
   },
+  userId: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
   status: {
     type: DataTypes.ENUM(
       "pending_payment",

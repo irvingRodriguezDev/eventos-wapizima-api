@@ -21,6 +21,7 @@ exports.createOrder = async (req, res) => {
       couponId = null, // Opcional
       customerDetails, // { email, name, picture, email_verified, username }
       selectedSeats = [], // Opcional para eventos con mapa
+      userId,
     } = req.body;
 
     // 1. Validar existencia del Evento
@@ -153,6 +154,7 @@ exports.createOrder = async (req, res) => {
         customerName: customerDetails?.name,
         customerEmail: customerDetails?.email,
         customerUsername: customerDetails?.username,
+        userId: userId,
       },
       { transaction },
     );
@@ -223,8 +225,9 @@ exports.createOrder = async (req, res) => {
           orderId: newOrder.id,
           eventId: eventId,
           paymentType: paymentType,
+          userId: userId,
         },
-        success_url: `${process.env.FRONTEND_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        success_url: `${process.env.FRONTEND_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}&type=${paymentType}`,
         cancel_url: `${process.env.FRONTEND_URL}/payment-cancel`,
       },
       {
