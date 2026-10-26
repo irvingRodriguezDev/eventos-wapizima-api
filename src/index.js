@@ -7,6 +7,7 @@ const http = require("http");
 const { sequelize } = require("./models");
 const routes = require("./routes");
 const cors = require("cors");
+const { handleStripeWebhook } = require("./controllers/webhookController");
 
 const app = express();
 
@@ -20,6 +21,11 @@ const corsOptions = {
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "ok" });
 });
+app.post(
+  "/api/payments/webhook",
+  express.raw({ type: "application/json" }),
+  handleStripeWebhook,
+);
 
 app.use(cors(corsOptions));
 
