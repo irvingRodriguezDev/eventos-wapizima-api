@@ -9,7 +9,7 @@ const sequelize = new Sequelize(
     port: 3306,
     dialect: "mysql",
     logging: false,
-    timezone: "-06:00",
+    // timezone: "-06:00",
 
     pool: {
       max: 15,

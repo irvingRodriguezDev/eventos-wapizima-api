@@ -27,7 +27,6 @@ const createEvent = async (req, res) => {
       percentageInitialPayment,
       daysBeforePayment,
     } = req.body;
-
     // 1. Crear Evento
     const slug = slugify(title, { lower: true, strict: true });
     const newEvent = await Event.create(
@@ -37,9 +36,7 @@ const createEvent = async (req, res) => {
         description,
         location,
         mapa,
-        startDate: new Date(startDate).toLocaleDateString("es-MX", {
-          dateStyle: "long",
-        }),
+        startDate,
         endDate,
         allowsPaymentPlan: true,
         hasSeatingMap: hasSeatingMap || false,
