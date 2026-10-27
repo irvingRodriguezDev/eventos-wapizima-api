@@ -256,3 +256,118 @@ exports.createOrder = async (req, res) => {
     });
   }
 };
+exports.createInstallmentCheckout = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
+  try {
+    const { orderId, amount } = req.body;
+
+    // 1. Validar existencia de la orden
+    const order = await Order.findOne({
+      where: {
+        id: orderId,
+      },
+      include: [
+        { model: Event, as: "event" },
+        { model: TicketType, as: "ticketType" },
+      ],
+      transaction,
+    });
+
+    if (!order) {
+      await transaction.rollback();
+      return res.status(404).json({
+        success: false,
+        message: "La orden no existe o no pertenece a tu usuario.",
+      });
+    }
+
+    // 2. Validaciones de negocio y montos
+    const balancePending = Number(order.balancePending);
+    const amountToPay = Number(amount);
+    const remainingAfterPayment = balancePending - amountToPay;
+    if (remainingAfterPayment > 0 && remainingAfterPayment < 10) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `No puedes dejar un saldo pendiente menor a $10.00 MXN. Debes abonar exactamente $${balancePending.toFixed(2)} para liquidar tu orden.`,
+      });
+    }
+    if (order.status === "completed" || balancePending <= 0) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "Esta orden ya se encuentra totalmente liquidada.",
+      });
+    }
+
+    if (amountToPay < 10) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "El monto mínimo para abonar es de $10.00 MXN.",
+      });
+    }
+
+    if (amountToPay > balancePending) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: `El monto no puede exceder el saldo pendiente ($${balancePending.toFixed(2)} MXN).`,
+      });
+    }
+
+    // Convertir a centavos para Stripe
+    const amountInCents = Math.round(amountToPay * 100);
+
+    // 3. Generar Idempotency Key única para este intento de abono
+    const idempotencyKey = `installment_order_${order.id}_${Date.now()}`;
+
+    // 4. Crear la sesión de Stripe Checkout
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "payment",
+        customer_email: order.customerEmail,
+        line_items: [
+          {
+            price_data: {
+              currency: "mxn",
+              product_data: {
+                name: `Abono a Orden #${order.orderNumber}`,
+                description: `Abono parcial para ${order.event?.title} (${order.ticketType?.name})`,
+              },
+              unit_amount: amountInCents,
+            },
+            quantity: 1,
+          },
+        ],
+        metadata: {
+          orderId: order.id,
+          eventId: order.eventId,
+          paymentType: "INSTALLMENT_PAYMENT", // Identificador para el webhook
+          amountPaid: amountToPay.toString(),
+        },
+        success_url: `${process.env.FRONTEND_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}&type=INSTALLMENT`,
+        cancel_url: `${process.env.FRONTEND_URL}/payment-cancel`,
+      },
+      {
+        idempotencyKey: idempotencyKey, // 👈 Clave de idempotencia
+      },
+    );
+
+    await transaction.commit();
+
+    return res.status(200).json({
+      success: true,
+      checkoutUrl: session.url,
+      sessionId: session.id,
+    });
+  } catch (error) {
+    await transaction.rollback();
+    console.error("Error al crear la sesión de abono en Stripe:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Ocurrió un error al procesar la solicitud de pago.",
+    });
+  }
+};

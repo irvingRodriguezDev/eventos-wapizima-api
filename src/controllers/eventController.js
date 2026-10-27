@@ -37,7 +37,9 @@ const createEvent = async (req, res) => {
         description,
         location,
         mapa,
-        startDate,
+        startDate: new Date(startDate).toLocaleDateString("es-MX", {
+          dateStyle: "long",
+        }),
         endDate,
         allowsPaymentPlan: true,
         hasSeatingMap: hasSeatingMap || false,

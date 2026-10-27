@@ -1,26 +1,32 @@
-const { Order, Ticket, Payment, sequelize } = require("../models");
+const {
+  Order,
+  Ticket,
+  Payment,
+  Event,
+  TicketType,
+  sequelize,
+} = require("../models");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const { sendTicketsEmail } = require("../services/emailService"); // Asegúrate de ajustar la ruta a tu servicio de Resend
 
 const handleStripeWebhook = async (req, res) => {
   const sig = req.headers["stripe-signature"];
-  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET_PAYMENTS; // Llave whsec_... de tu webhook en Stripe
+  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET_PAYMENTS;
 
   let event;
 
   try {
-    // 1. Verificar la firma oficial de Stripe (Nota: req.body debe ser el buffer crudo si usas express.raw)
+    // 1. Verificar la firma oficial de Stripe
     event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
   } catch (err) {
     console.error(`⚠️ Error de firma en Webhook: ${err.message}`);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // 2. Manejar el evento de pago exitoso
+  // 2. Manejar el evento de checkout completado
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
-
-    // Extraer los metadatos que enviamos al crear la orden
-    const { orderId, eventId, paymentType } = session.metadata || {};
+    const { orderId, paymentType } = session.metadata || {};
 
     if (!orderId) {
       console.error("❌ Webhook recibido sin orderId en los metadatos.");
@@ -32,8 +38,16 @@ const handleStripeWebhook = async (req, res) => {
     const transaction = await sequelize.transaction();
 
     try {
-      // Buscar la orden en la BD
-      const order = await Order.findByPk(orderId, { transaction });
+      //Buscar la orden incluyendo modelos necesarios para el correo
+      const order = await Order.findByPk(orderId, {
+        include: [
+          { model: Event, as: "event" },
+          { model: TicketType, as: "ticketType" },
+          { model: Ticket, as: "tickets" },
+        ],
+        transaction,
+      });
+
       if (!order) {
         await transaction.rollback();
         return res
@@ -41,7 +55,7 @@ const handleStripeWebhook = async (req, res) => {
           .json({ received: false, message: "Order not found" });
       }
 
-      // Evitar procesar dos veces la misma orden si Stripe reintenta el webhook
+      // Evitar doble procesamiento si Stripe reintenta el webhook en compras ya completadas
       if (order.status === "completed" && paymentType === "FULL") {
         await transaction.rollback();
         return res
@@ -49,70 +63,139 @@ const handleStripeWebhook = async (req, res) => {
           .json({ received: true, message: "Order already processed" });
       }
 
-      // 3. LÓGICA SEGÚN EL TIPO DE PAGO (FULL vs PLAN)
+      let shouldSendEmail = false;
+
+      // -------------------------------------------------------------
+      // CASO A: PAGO DE CONTADO (FULL)
+      // -------------------------------------------------------------
       if (paymentType === "FULL") {
-        // --- CASO A: PAGO DE CONTADO ---
         order.status = "completed";
         order.stripePaymentIntentId = session.payment_intent;
+        order.totalPaid = order.totalAmount;
         order.balancePending = 0;
         await order.save({ transaction });
 
-        // Activar los tickets reservados
+        // Activar tickets
         await Ticket.update(
           { status: "reserved" },
           { where: { orderId: order.id }, transaction },
         );
 
-        // Registrar el pago completo en la tabla de Pagos (si la manejas)
+        // Registrar pago
         await Payment.create(
           {
             orderId: order.id,
-            amount: order.totalPaid,
+            amount: order.totalAmount,
             paymentMethod: "stripe",
-            stripePaymentIntentId: session.id,
+            stripeSessionId: session.id,
+            stripePaymentIntentId: session.payment_intent,
             status: "succeeded",
           },
           { transaction },
         );
-      } else if (paymentType === "PLAN") {
-        // --- CASO B: ABONO / PLAN DE PAGOS ---
-        const amountPaidNow = parseFloat(session.amount_total) / 100; // Stripe maneja centavos
 
-        // Registrar el abono en la tabla de pagos
+        shouldSendEmail = true; // Se envía correo por compra completa
+      }
+      // -------------------------------------------------------------
+      // CASO B: PRIMER PAGO / ENGANCHE DE PLAN DE PAGOS (PLAN)
+      // -------------------------------------------------------------
+      else if (paymentType === "PLAN") {
+        const amountPaidNow = parseFloat(session.amount_total) / 100;
+
         await Payment.create(
           {
             orderId: order.id,
             amount: amountPaidNow,
             paymentMethod: "stripe",
             stripeSessionId: session.id,
+            stripePaymentIntentId: session.payment_intent,
             status: "succeeded",
           },
           { transaction },
         );
 
-        // Actualizar saldos y estatus de la orden
+        const newTotalPaid = parseFloat(order.totalPaid || 0);
         const newBalancePending = Math.max(
           0,
-          parseFloat(order.balancePending) - amountPaidNow,
+          parseFloat(order.totalAmount) - newTotalPaid,
         );
+        const isFullyPaid = newBalancePending <= 0;
 
+        order.totalPaid = newTotalPaid;
         order.balancePending = newBalancePending;
-        // Si el saldo pendiente llega a 0, la orden se marca como PAID, de lo contrario sigue PARTIAL o ACTIVE con deuda
-        order.status = newBalancePending === 0 ? "completed" : "active_plan";
+        order.status = isFullyPaid ? "completed" : "active_plan";
         await order.save({ transaction });
 
-        // Activar los tickets con el primer abono (enganche cubierto)
         await Ticket.update(
           { status: "reserved" },
           { where: { orderId: order.id }, transaction },
         );
+
+        if (isFullyPaid) {
+          shouldSendEmail = true;
+        }
+      }
+      // -------------------------------------------------------------
+      // CASO C: ABONO SUBSECUENTE A ORDEN EXISTENTE (INSTALLMENT_PAYMENT)
+      // -------------------------------------------------------------
+      else if (paymentType === "INSTALLMENT_PAYMENT") {
+        const amountPaidInOrder = parseFloat(session.amount_total) / 100;
+
+        await Payment.create(
+          {
+            orderId: order.id,
+            amount: amountPaidInOrder,
+            paymentMethod: "stripe",
+            stripeSessionId: session.id,
+            stripePaymentIntentId: session.payment_intent,
+            status: "succeeded",
+          },
+          { transaction },
+        );
+
+        const newTotalPaid =
+          parseFloat(order.totalPaid || 0) + amountPaidInOrder;
+
+        const newBalancePending = Math.max(
+          0,
+          parseFloat(order.totalAmount) - newTotalPaid,
+        );
+        const isFullyPaid = newBalancePending <= 0;
+
+        order.totalPaid = newTotalPaid;
+        order.balancePending = newBalancePending;
+        order.status = isFullyPaid ? "completed" : "active_plan";
+        await order.save({ transaction });
+
+        if (isFullyPaid) {
+          shouldSendEmail = true; // Se envía correo únicamente al liquidar totalmente
+        }
       }
 
-      // Confirmar todos los cambios en la Base de Datos
+      // Confirmar transacción en BD
       await transaction.commit();
       console.log(
         `✅ Orden ${order.orderNumber} procesada correctamente vía Webhook.`,
       );
+
+      // 4. DISPARAR ENVÍO DE CORREO VIA RESEND SI LA ORDEN ESTÁ 100% LIQUIDADA
+      if (shouldSendEmail) {
+        // Consultar boletos actualizados tras el commit
+        const tickets = await Ticket.findAll({ where: { orderId: order.id } });
+
+        // Ejecución asíncrona sin bloquear la respuesta de Stripe
+        sendTicketsEmail(order, tickets)
+          .then(() =>
+            console.log(
+              `📧 Correo de boletos enviado a ${order.customerEmail}`,
+            ),
+          )
+          .catch((err) =>
+            console.error(`❌ Error al enviar correo via Resend:`, err),
+          );
+      }
+
+      return res.status(200).json({ received: true });
     } catch (dbError) {
       await transaction.rollback();
       console.error(

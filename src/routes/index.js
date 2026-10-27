@@ -7,11 +7,13 @@ const webhookRoutes = require("./webhookRoutes");
 const couponRoutes = require("./couponRoutes");
 const orderRoutes = require("./orderRoutes");
 const userRoutes = require("./userRoutes");
+const ticketPublicRoutes = require("./ticketPublicRoutes");
 router.use("/events", eventRoutes);
 router.use("/coupons", couponRoutes);
 router.use("/ticket-types", ticketTypeRoutes);
 router.use("/orders", orderRoutes);
 router.use("/user", userRoutes);
+router.use("/tickets", ticketPublicRoutes);
 router.use("/webhooks", webhookRoutes);
 
 module.exports = router;
