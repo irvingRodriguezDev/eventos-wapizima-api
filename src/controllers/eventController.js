@@ -9,6 +9,7 @@ const {
 } = require("../models");
 const slugify = require("slugify");
 const getS3Url = require("../helpers/getS3Url");
+const dayjs = require("dayjs");
 /**
  * Crear Evento completo con Portada, Tipos de Boletos y Plan de Pagos
  */
@@ -148,18 +149,27 @@ const getAllEventsPublished = async (req, res) => {
       ],
       order: [["startDate", "ASC"]],
     });
+
     const formatedEvents = events.map((event) => {
       const eventData = event.toJSON();
+
       return {
         ...eventData,
+        // Si necesitas la imagen de S3
         image: eventData.image ? getS3Url(eventData.image.s3key) : null,
+
+        // Formateamos startDate con dayjs (ej. "2026-12-18T00:00:00.000Z" -> formato limpio o ISO deseado)
+        startDate: eventData.startDate
+          ? dayjs(eventData.startDate).format("YYYY-MM-DD HH:mm:ss") // O el formato que prefieras
+          : null,
       };
     });
+
     return res.status(200).json(formatedEvents);
   } catch (error) {
     console.log(
       error,
-      "Hubo un error al obtener la lista de los eventos en borrador",
+      "Hubo un error al obtener la lista de los eventos publicados",
     );
     return res
       .status(500)

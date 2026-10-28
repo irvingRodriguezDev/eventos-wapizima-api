@@ -106,8 +106,8 @@ exports.createOrder = async (req, res) => {
       totalPaidCalculated = totalAmountCalculated;
       balancePendingCalculated = 0;
     } else if (paymentType === "PLAN") {
-      const depositPercentage = event.depositPercentage
-        ? parseFloat(event.depositPercentage)
+      const depositPercentage = event.percentageInitialPayment
+        ? parseFloat(event.percentageInitialPayment)
         : 40; // 40% por defecto o lo que tenga configurado el evento
       totalPaidCalculated = (totalAmountCalculated * depositPercentage) / 100;
       balancePendingCalculated = totalAmountCalculated - totalPaidCalculated;

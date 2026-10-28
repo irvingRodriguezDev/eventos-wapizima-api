@@ -15,7 +15,7 @@ const getOrdersByUser = async (req, res) => {
         {
           model: Event,
           as: "event",
-          attributes: ["title", "startDate", "location"],
+          attributes: ["title", "startDate", "location", "daysBeforePayment"],
         },
         {
           model: Ticket,
@@ -57,7 +57,7 @@ const getShowOrder = async (req, res) => {
         {
           model: Event,
           as: "event",
-          attributes: ["title", "startDate", "location"],
+          attributes: ["title", "startDate", "location", "daysBeforePayment"],
         },
         {
           model: Ticket,
