@@ -13,5 +13,6 @@ router.get("/admin", couponController.getAllCoupons);
 router.post("/admin", couponController.createCoupon);
 router.put("/admin/:id", couponController.updateCoupon);
 router.patch("/admin/:id/toggle-status", couponController.toggleCouponStatus);
+router.delete("/admin/:id", couponController.deleteCoupon);
 
 module.exports = router;

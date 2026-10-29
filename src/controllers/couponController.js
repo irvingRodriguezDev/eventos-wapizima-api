@@ -264,3 +264,21 @@ exports.toggleCouponStatus = async (req, res) => {
     });
   }
 };
+
+exports.deleteCoupon = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const coupon = await Coupon.findByPk(id);
+    await coupon.destroy();
+    return res
+      .status(200)
+      .json({ message: "El cupón se desactivo correctamente!" });
+  } catch (error) {
+    console.log(error, "el error al eliminar el cupom");
+
+    return res
+      .status(400)
+      .json({ message: "No se pudo eliminar el cupón", error });
+  }
+};
