@@ -38,6 +38,7 @@ const getOrdersByUser = async (req, res) => {
           attributes: ["code", "discountType", "discountValue"],
         },
       ],
+      order: [["updatedAt", "DESC"]],
     });
     return res.status(200).json(orders);
   } catch (error) {
