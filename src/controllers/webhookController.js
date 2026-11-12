@@ -7,8 +7,8 @@ const {
   sequelize,
 } = require("../models");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-const { sendTicketsEmail } = require("../services/emailService"); // Asegúrate de ajustar la ruta a tu servicio de Resend
-
+const { sendTicketsEmail } = require("../services/emailService");
+const { Op } = require("sequelize");
 const handleStripeWebhook = async (req, res) => {
   const sig = req.headers["stripe-signature"];
   const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET_PAYMENTS;
@@ -16,14 +16,12 @@ const handleStripeWebhook = async (req, res) => {
   let event;
 
   try {
-    // 1. Verificar la firma oficial de Stripe
     event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
   } catch (err) {
     console.error(`⚠️ Error de firma en Webhook: ${err.message}`);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // 2. Manejar el evento de checkout completado
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
     const { orderId, paymentType } = session.metadata || {};
@@ -35,10 +33,32 @@ const handleStripeWebhook = async (req, res) => {
         .json({ received: false, message: "Missing orderId" });
     }
 
+    // --- IDEMPOTENCIA NIVEL EVENTO DE STRIPE (Opcional pero recomendado) ---
+    // Si guardas los eventos procesados en una tabla auxiliar, puedes frenar aquí antes de abrir transacción.
+
     const transaction = await sequelize.transaction();
 
     try {
-      //Buscar la orden incluyendo modelos necesarios para el correo
+      // 1. Validar si este session.id o payment_intent ya fue registrado en Payments
+      const existingPayment = await Payment.findOne({
+        where: {
+          stripePaymentIntentId: session.payment_intent,
+        },
+        transaction, // ¡Importante incluir la transacción aquí!
+      });
+
+      if (existingPayment) {
+        console.log(
+          "⚠️ El pago ya había sido registrado anteriormente. Ignorando webhook duplicado.",
+        );
+        await transaction.rollback(); // <-- EVITA LA FUGA DE CONEXIÓN
+        return res.status(200).json({
+          received: true,
+          message: "Pago ya registrado anteriormente",
+        });
+      }
+
+      // Buscar la orden incluyendo modelos necesarios
       const order = await Order.findByPk(orderId, {
         include: [
           { model: Event, as: "event" },
@@ -55,7 +75,7 @@ const handleStripeWebhook = async (req, res) => {
           .json({ received: false, message: "Order not found" });
       }
 
-      // Evitar doble procesamiento si Stripe reintenta el webhook en compras ya completadas
+      // Evitar doble procesamiento si la orden ya está completa y llega un reintento FULL
       if (order.status === "completed" && paymentType === "FULL") {
         await transaction.rollback();
         return res
@@ -75,13 +95,11 @@ const handleStripeWebhook = async (req, res) => {
         order.balancePending = 0;
         await order.save({ transaction });
 
-        // Activar tickets
         await Ticket.update(
           { status: "reserved" },
           { where: { orderId: order.id }, transaction },
         );
 
-        // Registrar pago
         await Payment.create(
           {
             orderId: order.id,
@@ -94,7 +112,7 @@ const handleStripeWebhook = async (req, res) => {
           { transaction },
         );
 
-        shouldSendEmail = true; // Se envía correo por compra completa
+        shouldSendEmail = true;
       }
       // -------------------------------------------------------------
       // CASO B: PRIMER PAGO / ENGANCHE DE PLAN DE PAGOS (PLAN)
@@ -114,7 +132,7 @@ const handleStripeWebhook = async (req, res) => {
           { transaction },
         );
 
-        const newTotalPaid = parseFloat(order.totalPaid || 0);
+        const newTotalPaid = parseFloat(order.totalPaid || 0) + amountPaidNow;
         const newBalancePending = Math.max(
           0,
           parseFloat(order.totalAmount) - newTotalPaid,
@@ -168,22 +186,18 @@ const handleStripeWebhook = async (req, res) => {
         await order.save({ transaction });
 
         if (isFullyPaid) {
-          shouldSendEmail = true; // Se envía correo únicamente al liquidar totalmente
+          shouldSendEmail = true;
         }
       }
 
       // Confirmar transacción en BD
       await transaction.commit();
-      console.log(
-        `✅ Orden ${order.orderNumber} procesada correctamente vía Webhook.`,
-      );
+      console.log(`✅ Orden ${order.id} procesada correctamente vía Webhook.`);
 
-      // 4. DISPARAR ENVÍO DE CORREO VIA RESEND SI LA ORDEN ESTÁ 100% LIQUIDADA
+      // 4. DISPARAR ENVÍO DE CORREO (Fuera de la transacción y tras el commit)
       if (shouldSendEmail) {
-        // Consultar boletos actualizados tras el commit
         const tickets = await Ticket.findAll({ where: { orderId: order.id } });
 
-        // Ejecución asíncrona sin bloquear la respuesta de Stripe
         sendTicketsEmail(order, tickets)
           .then(() =>
             console.log(

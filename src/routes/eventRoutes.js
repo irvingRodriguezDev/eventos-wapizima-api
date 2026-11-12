@@ -6,7 +6,7 @@ const {
   getAllEventsDrafted,
   getAllEventsPublished,
   updateEventSettings,
-} = require("../controllers/EventController");
+} = require("../controllers/eventController");
 const router = express.Router();
 
 // Lectura pública de eventos

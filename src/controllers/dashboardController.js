@@ -1,5 +1,12 @@
 const dayjs = require("dayjs");
-const { Order, Ticket, Event, sequelize, TicketType } = require("../models");
+const {
+  Order,
+  Ticket,
+  Event,
+  sequelize,
+  TicketType,
+  Payment,
+} = require("../models");
 const { Op } = require("sequelize");
 
 const getDashboardMetrics = async (req, res) => {
@@ -87,47 +94,58 @@ const getLatestOrders = async (req, res) => {
 
 const getSalesAnalytics = async (req, res) => {
   try {
-    const days = parseInt(req.query.days) || 7; // Por defecto últimos 7 días
+    const days = parseInt(req.query.days) || 7;
+
+    // 1. Inicio exacto del día (00:00:00) en hora CDMX
     const startDate = dayjs()
+      .tz("America/Mexico_City")
       .subtract(days - 1, "day")
       .startOf("day")
       .toDate();
 
-    // Consultamos las órdenes completadas o abonadas dentro del rango de fechas
-    const orders = await Order.findAll({
+    // 2. Fin exacto del día (23:59:59.999) en hora CDMX
+    const endDateObj = dayjs().tz("America/Mexico_City").endOf("day");
+    const endDateForSequelize = endDateObj.toDate();
+
+    const payments = await Payment.findAll({
       where: {
-        createdAt: { [Op.gte]: startDate },
-        status: { [Op.or]: ["active_plan", "completed"] },
+        status: "succeeded",
+        createdAt: {
+          [Op.between]: [startDate, endDateForSequelize],
+        },
       },
-      attributes: ["createdAt", "totalPaid", "totalAmount"],
+      attributes: ["id", "amount", "createdAt"],
       order: [["createdAt", "ASC"]],
     });
 
-    // Agrupamos los datos por día usando un mapa auxiliar
     const salesMap = {};
     for (let i = 0; i < days; i++) {
       const dateKey = dayjs()
+        .tz("America/Mexico_City")
         .subtract(days - 1 - i, "day")
         .format("YYYY-MM-DD");
       salesMap[dateKey] = 0;
     }
 
-    orders.forEach((order) => {
-      const dateKey = dayjs(order.createdAt).format("YYYY-MM-DD");
+    payments.forEach((payment) => {
+      // Forzamos la lectura de la fecha del pago en horario de CDMX para agruparla en el día correcto
+      const dateKey = dayjs(payment.createdAt)
+        .tz("America/Mexico_City")
+        .format("YYYY-MM-DD");
+
       if (salesMap[dateKey] !== undefined) {
-        // Sumamos amountPaid (o totalAmount según tu modelo de cobros)
-        salesMap[dateKey] += Number(order.totalPaid || order.totalAmount || 0);
+        salesMap[dateKey] += Number(payment.amount || 0);
       }
     });
 
     const formattedData = Object.keys(salesMap).map((date) => ({
-      date: dayjs(date).format("DD MMM"), // Ej. "18 oct"
-      total: salesMap[date],
+      date: dayjs(date).format("DD MMM"),
+      total: Number(salesMap[date].toFixed(2)),
     }));
 
     return res.status(200).json(formattedData);
   } catch (error) {
-    console.error("Error al obtener analítica de ventas:", error);
+    console.error("Error al obtener analítica de pagos:", error);
     return res.status(500).json({ message: "Error al generar la analítica" });
   }
 };

@@ -177,9 +177,7 @@ const getAllEventsPublished = async (req, res) => {
   }
 };
 
-/**
- * Obtener detalle de un evento por ID o Slug
- */
+/*** Obtener detalle de un evento por ID o Slug*/
 const getEventBySlug = async (req, res) => {
   try {
     const { slug } = req.params;

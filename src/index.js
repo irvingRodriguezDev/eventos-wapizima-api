@@ -8,9 +8,13 @@ const { sequelize } = require("./models");
 const routes = require("./routes");
 const cors = require("cors");
 const { handleStripeWebhook } = require("./controllers/webhookController");
-
+const dayjs = require("dayjs");
+const utc = require("dayjs/plugin/utc");
+const timezone = require("dayjs/plugin/timezone");
 const app = express();
-
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.tz.setDefault("America/Mexico_City");
 const corsOptions = {
   origin: "*",
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
